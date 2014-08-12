@@ -22,10 +22,10 @@ public class HaloTable {
     static ColumnSpecifierHelper colspec =
             new ColumnSpecifierHelper(new ColumnSpecifierFormatter(), 32);
 
-    TableProperty tableProperty;
-    Configuration conf;
-    HTable primaryTable;
-    HTable[] indexTables;
+    private TableProperty tableProperty;
+    private Configuration conf;
+    private HTable primaryTable;
+    private HTable[] indexTables;
 
     public HaloTable(Configuration conf, TableProperty tableProperty) throws IOException {
         this.conf = conf;
@@ -189,10 +189,10 @@ public class HaloTable {
             primaryTable.close();
         } catch (Exception e) {
         }
-        for (int i = 0; i < indexTables.length; ++i) {
-            if (indexTables[i] != null) {
+        for (HTable t : indexTables) {
+            if (t != null) {
                 try {
-                    indexTables[i].close();
+                    t.close();
                 } catch (Exception e) {
                 }
             }
@@ -203,16 +203,19 @@ public class HaloTable {
         return tableProperty;
     }
 
-    public RowSet scanIndex(int column, Scan scan) throws IOException {
-        HTable indexTable = indexTables[column];
-        if (indexTable == null) {
-            throw new IOException("Column #" + column + " not indexed.");
+    public RowSet scan(ColumnScans columnScans) throws IOException {
+        if (columnScans.getColumn() >= tableProperty.getNumberOfColumns()) {
+            throw new IOException("Column #" + columnScans.getColumn()
+                    + " out of range, table(" + tableProperty.getName() + ")");
         }
 
+        HTable indexTable = indexTables[columnScans.getColumn()];
         RowSet rows = new RowSet();
-        ResultScanner scanner = indexTable.getScanner(scan);
-        for (Result result = scanner.next(); result != null; result = scanner.next()) {
-            rows.add(RowId.fromIndexRow(result.getRow()));
+        for (ColumnScans.Segment segment : columnScans.getSegments()) {
+            ResultScanner scanner = indexTable.getScanner(segment.toScan());
+            for (Result result = scanner.next(); result != null; result = scanner.next()) {
+                rows.add(RowId.fromIndexRow(result.getRow()));
+            }
         }
         return rows;
     }

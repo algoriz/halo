@@ -183,4 +183,12 @@ public final class Bytes {
     public static int compare(byte[] buf1, int off1, int len1, byte[] buf2, int off2, int len2) {
         return org.apache.hadoop.hbase.util.Bytes.compareTo(buf1, off1, len1, buf2, off2, len2);
     }
+
+    public static byte[] minOf(byte[] a1, byte[] a2) {
+        return compare(a1, a2) < 0 ? a1 : a2;
+    }
+
+    public static byte[] maxOf(byte[] a1, byte[] a2) {
+        return compare(a1, a2) > 0 ? a1 : a2;
+    }
 }

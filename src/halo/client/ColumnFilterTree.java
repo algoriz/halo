@@ -1,10 +1,10 @@
 package halo.client;
 
+import halo.core.ColumnScans;
 import halo.core.HaloTable;
 import halo.core.RowSet;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.filter.FirstKeyOnlyFilter;
-import org.apache.hadoop.hbase.filter.KeyOnlyFilter;
 
 import java.io.IOException;
 
@@ -20,6 +20,7 @@ public class ColumnFilterTree {
     private int connector;
     private ColumnFilterTree rightChild;
     private ColumnFilter columnFilter;
+    private ColumnScans columnScans;
 
     /**
      * Constructs an empty node
@@ -92,7 +93,25 @@ public class ColumnFilterTree {
         this.columnFilter = columnFilter;
     }
 
-    public RowSet applyToTable(HaloTable table) throws IOException {
+    private void buildScans(HaloTable table) throws IOException {
+        if (isLeafNode()){
+            columnScans = columnFilter.toColumnScans(table);
+        } else {
+            leftChild.buildScans(table);
+            rightChild.buildScans(table);
+
+            if (leftChild.columnScans != null && rightChild.columnScans != null &&
+                    leftChild.columnScans.isMergable(rightChild.columnScans)){
+                columnScans = connector == OR ?
+                        leftChild.columnScans.unionMerge(rightChild.columnScans) :
+                        leftChild.columnScans.intersectMerge(rightChild.columnScans);
+            } else {
+                columnScans = null;
+            }
+        }
+    }
+
+    private RowSet applyScans(HaloTable table) throws IOException {
         if (isEmpty()){
             Scan scan = new Scan();
             /**
@@ -103,22 +122,18 @@ public class ColumnFilterTree {
             return table.scanPrimary(scan);
         }
 
-        if (isLeafNode()){
-            return columnFilter.applyToTable(table);
-        }
-
-        /**
-         *  An optimization for filters like "X > a and X < b"
-         */
-        if (leftChild.isLeafNode() && rightChild.isLeafNode()
-                && connector == AND
-                && leftChild.getColumnFilter().getColumn().equals(rightChild.getColumnFilter().getColumn())){
-
+        if (columnScans != null){
+            return table.scan(columnScans);
         }
 
         RowSet left = leftChild.applyToTable(table);
         RowSet right = rightChild.applyToTable(table);
         return connector == OR ? left.union(right) : left.intersect(right);
+    }
+
+    public RowSet applyToTable(HaloTable table) throws IOException {
+        buildScans(table);
+        return applyScans(table);
     }
 }
 
